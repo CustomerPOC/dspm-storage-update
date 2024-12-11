@@ -73,7 +73,7 @@ foreach  ($storageAccount in $allStorageAccounts) {
     }
 
     # Progress bar
-    Write-Progress -Activity "Storage Account: $($storageAccount.StorageAccountName) Region: $($storageAccount.Location)" -Status "Processing Storage Account $counter of $storageCount" -PercentComplete $percentComplete -Id 1
+    Write-Progress -Activity "Region: $($storageAccount.Location) | Storage Account: $($storageAccount.StorageAccountName)" -Status "Processing Storage Account $counter of $storageCount" -PercentComplete $percentComplete -Id 1
 
     # Skip if no matching VNet
     if (-not $currentVNet) { continue }
