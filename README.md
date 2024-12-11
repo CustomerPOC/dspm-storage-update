@@ -2,10 +2,6 @@
 
 This repo contains an Azure Powershell script that can be used to modify Storage Account firewalls for DIG | DSPM that are used for data scanning.  This script will look for all Storage Accounts and VNets in a resource group matching: "dig-security-rg-". Once identified, the script will set the Storage Account firewall to only allow access from the DIG | DSPM VNet and the SaaS endpoints defined [here](https://docs.prismacloud.io/en/enterprise-edition/content-collections/data-security-posture-management/prisma-cloud-dspm-deployment/deploy-prisma-cloud-dspm-on-azure/azure-permissions): 
 
----
-
-> :warning: **WARNING**
->  Running this script will deny access to all Storage Accounts in the dig-security-rg-* Resource Group.
 
 > [!NOTE]
 > Even though the Storage Account by default is set with no firewall configuration, all containers and blobs are set to private access only and are not accessible from the internet.
