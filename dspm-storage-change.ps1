@@ -63,9 +63,10 @@
 [CmdletBinding()]
 param (
     [Parameter(Mandatory=$false, HelpMessage = "Allowed public IPs to allow. Default: '54.225.205.121, 18.214.146.232, 3.93.120.3'")]
-    [string]$Ips, 
-    [Parameter(Mandatory=$false, HelpMessage="Comma-separated list of Azure regions used for CreateVNet switch (e.g., 'westus,eastus,centralus')")]
-    [string]$Access
+    [string]$Ips
+    # [Parameter(Mandatory=$false, HelpMessage="Comma-separated list of Azure regions used for CreateVNet switch (e.g., 'westus,eastus,centralus')")]
+    # [ValidateSet("Logging, Metrics, AzureServices", "Logging, Metrics", "Logging, AzureServices", "Metrics, AzureServices", "Logging", "Metrics", "AzureServices", "")]
+    # [string]$Access
 )
 
 $tagName            = 'dig-security'
@@ -106,8 +107,8 @@ foreach  ($storageAccount in $allStorageAccounts) {
 
     try {
         # Set service endpoints on default subnet
-        $subnetConfig = Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints -VirtualNetwork $currentVNet -AddressPrefix $currentVNet.Subnets[0].AddressPrefix 
-        $subnetConfig | Set-AzVirtualNetwork 
+        $subnetConfig = Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints -VirtualNetwork $currentVNet -AddressPrefix $currentVNet.Subnets[0].AddressPrefix > $null
+        $subnetConfig | Set-AzVirtualNetwork > $null
     
         # Get scan subnet id
         $dspmSubnet = @($currentVNet.Subnets.Id)
@@ -120,7 +121,7 @@ foreach  ($storageAccount in $allStorageAccounts) {
             -NetworkRuleSet (@{bypass=$azureAccess;
                 ipRules=$ipRules;
                 virtualNetworkRules=$vnetRules;
-                defaultAction="deny"}) 
+                defaultAction="deny"}) > $null
     }
     catch {
         Write-Error "Failed to modify Storage Account $($storageAccount.StorageAccountName): $_"
