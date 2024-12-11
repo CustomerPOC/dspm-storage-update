@@ -90,30 +90,48 @@ param (
 # add required ingress ip's to storage account rules
 
 
+$tagName            = 'dig-security'
 $resourceGroup      = Get-AzResourceGroup | Where-Object { $_.ResourceGroupName -match "dig-security-rg-" }
 $allVnets           = Get-AzVirtualNetwork -ResourceGroupName $resourceGroup.ResourceGroupName
 $allStorageAccounts = Get-AzStorageAccount -ResourceGroupName $resourceGroup.ResourceGroupName
-
-$currentVNet = $allVnets | Where-Object Location -eq $allStorageAccounts[0].Location
+$serviceEndpoints   = @("Microsoft.AzureCosmosDB", "Microsoft.Sql", "Microsoft.Storage")
 
 $publicIPs = @("54.225.205.121", "18.214.146.232", "3.93.120.3")
-$scanVNets = @($currentVNet.Subnets.Id)
+#$currentVNet = $allVnets | Where-Object Location -eq $allStorageAccounts[0].Location
 
-$ipRules = $publicIPs | ForEach-Object { @{IPAddressOrRange = $_; Action = "allow" } }
-$vnetRules = $scanVNets | ForEach-Object { @{VirtualNetworkResourceId = $_; Action = "allow" } }
+foreach  ($storageAccount in $allStorageAccounts) {
+    $currentVNet = $allVnets | Where-Object Location -eq $storageAccount.Location
 
-Set-AzStorageAccount `
+    # Skip if no matching VNet
+    if (-not $currentVNet) { continue }
+
+    $subnetName = "$($tagName)-$($currentVNet.Location)"
+    $subnetConfig = Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints -VirtualNetwork $currentVNet -AddressPrefix $currentVNet.Subnets[0].AddressPrefix 
+    $subnetConfig | Set-AzVirtualNetwork 
+
+    $scanVNets = @($currentVNet.Subnets.Id)
+
+    $ipRules = $publicIPs | ForEach-Object { @{IPAddressOrRange = $_; Action = "allow" } }
+    $vnetRules = $scanVNets | ForEach-Object { @{VirtualNetworkResourceId = $_; Action = "allow" } }
+
+    Set-AzStorageAccount `
     -ResourceGroupName $resourceGroup.ResourceGroupName `
-    -Name $allStorageAccounts[0].StorageAccountName `
+    -Name $storageAccount.StorageAccountName `
     -NetworkRuleSet (@{bypass="Logging,Metrics,AzureServices";
         ipRules=$ipRules;
         virtualNetworkRules=$vnetRules;
         defaultAction="deny"}) 
+}
 
-Set-AzStorageAccount -ResourceGroupName "MyResourceGroup" -Name "mystorageaccount" -NetworkRuleSet (@{bypass="Logging,Metrics";
-    ipRules=$ipRules ;
-    virtualNetworkRules=$vnetRules;
-    defaultAction="deny"})
+
+
+
+
+
+
+
+
+
 
 
 $tagName        = 'dig-security'
