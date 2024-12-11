@@ -62,127 +62,67 @@
 
 [CmdletBinding()]
 param (
-    [Parameter(Mandatory=$false, HelpMessage="If selected will output raw JSON of VNet's.")]
-    [switch]$Backup,
-    [Parameter(Mandatory=$false, HelpMessage = "IP CIDR range to use for new VNet: 10.10.0.0/22")]
-    [string]$Cidr,
-    [Parameter(Mandatory=$false, HelpMessage="Create new VNets based on defined regions.")]
-    [switch]$CreateVNet,
-    [Parameter(Mandatory=$false, HelpMessage="If CreateVNet is used, this will overwrite existing VNets instead of prompting to replace.")]
-    [switch]$Force,
-    [Parameter(Mandatory = $false, HelpMessage = "Path to CSV file containing regions and CIDRs for updating.")]
-    [string]$ImportFile,
-    [Parameter(Mandatory=$false, HelpMessage="Prompt for CIDR on each region.")]
-    [switch]$Prompt,    
+    [Parameter(Mandatory=$false, HelpMessage = "Allowed public IPs to allow. Default: '54.225.205.121, 18.214.146.232, 3.93.120.3'")]
+    [string]$Ips, 
     [Parameter(Mandatory=$false, HelpMessage="Comma-separated list of Azure regions used for CreateVNet switch (e.g., 'westus,eastus,centralus')")]
-    [string]$Regions
+    [string]$Access
 )
-
 
 $tagName            = 'dig-security'
 $resourceGroup      = Get-AzResourceGroup | Where-Object { $_.ResourceGroupName -match "dig-security-rg-" }
 $allVnets           = Get-AzVirtualNetwork -ResourceGroupName $resourceGroup.ResourceGroupName
 $allStorageAccounts = Get-AzStorageAccount -ResourceGroupName $resourceGroup.ResourceGroupName
+$storageCount       = $allStorageAccounts.Count
 $serviceEndpoints   = @("Microsoft.AzureCosmosDB", "Microsoft.Sql", "Microsoft.Storage")
-$publicIPs          = @("54.225.205.121", "18.214.146.232", "3.93.120.3")
+$dspmIps            = @("54.225.205.121", "18.214.146.232", "3.93.120.3")
+$azureAccess        = "Logging, Metrics, AzureServices"
 
-foreach  ($storageAccount in $allStorageAccounts) {
-    $currentVNet = $allVnets | Where-Object Location -eq $storageAccount.Location
 
-    # Skip if no matching VNet
-    if (-not $currentVNet) { continue }
+if ($Ips) { $publicIPs = $Ips.Split(",").Trim() }
 
-    $subnetName = "$($tagName)-$($currentVNet.Location)"
-    $subnetConfig = Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints -VirtualNetwork $currentVNet -AddressPrefix $currentVNet.Subnets[0].AddressPrefix 
-    $subnetConfig | Set-AzVirtualNetwork 
-
-    $scanVNets = @($currentVNet.Subnets.Id)
-
-    $ipRules = $publicIPs | ForEach-Object { @{IPAddressOrRange = $_; Action = "allow" } }
-    $vnetRules = $scanVNets | ForEach-Object { @{VirtualNetworkResourceId = $_; Action = "allow" } }
-
-    Set-AzStorageAccount `
-    -ResourceGroupName $resourceGroup.ResourceGroupName `
-    -Name $storageAccount.StorageAccountName `
-    -NetworkRuleSet (@{bypass="Logging,Metrics,AzureServices";
-        ipRules=$ipRules;
-        virtualNetworkRules=$vnetRules;
-        defaultAction="deny"}) 
-}
-
+# Set Default values if not provided
+if (-not $Ips) { $publicIPs = $dspmIps }
+if (-not $Access) { $Access = $azureAccess }
 
 # ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
 # ║ Main Process: Loop through all discovered VNet's, find matching tag, remove all subnets and CIDR's, replace with specified CIDR.         ║
 # ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-foreach ($vnet in $allVnets) {
+foreach  ($storageAccount in $allStorageAccounts) {
+
+    # Match VNet to storage account location
+    $currentVNet = $allVnets | Where-Object Location -eq $storageAccount.Location
+
     $counter++
-    $percentComplete = ($counter / $vnetCount) * 100
+    $percentComplete = ($counter / $storageCount) * 100
 
-    # If Regions switch is used, skip VNet if not in specified regions
-    if ($Regions) {
-        if ($vnet.Location -notin $Regions) {
-            Start-Sleep -Seconds 1
-            continue
-        }
+    # Progress bar
+    Write-Progress -Activity "Processing Storage Account $($storageAccount.StorageAccountName)" -Status "Processing Storage Account $counter of $storageCount" -PercentComplete $percentComplete -Id 1
+
+    # Skip if no matching VNet
+    if (-not $currentVNet) { continue }
+
+    # Set Dig | DSPM subnet name format
+    $subnetName = "$($tagName)-$($currentVNet.Location)"
+
+    try {
+        # Set service endpoints on default subnet
+        $subnetConfig = Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints -VirtualNetwork $currentVNet -AddressPrefix $currentVNet.Subnets[0].AddressPrefix 
+        $subnetConfig | Set-AzVirtualNetwork 
+    
+        # Get scan subnet id
+        $dspmSubnet = @($currentVNet.Subnets.Id)
+    
+        # Build storage account allow rules for IP's and VNet
+        $ipRules    = $publicIPs | ForEach-Object { @{IPAddressOrRange = $_; Action = "allow" } }
+        $vnetRules  = $dspmSubnet | ForEach-Object { @{VirtualNetworkResourceId = $_; Action = "allow" } }
+    
+        Set-AzStorageAccount -ResourceGroupName $resourceGroup.ResourceGroupName -Name $storageAccount.StorageAccountName `
+            -NetworkRuleSet (@{bypass=$azureAccess;
+                ipRules=$ipRules;
+                virtualNetworkRules=$vnetRules;
+                defaultAction="deny"}) 
     }
-
-    Write-Progress -Activity "Processing VNet $($vnet.Name)" -Status "Processing VNet $counter of $vnetCount" -PercentComplete $percentComplete -Id 1
-
-    # If no tag on VNet skip it and wait 1 second so progress bar is visible
-    if (-not $vnet.Tag) { Start-Sleep -Seconds 1; continue }
-
-    # If tag is found on VNet, continue
-    if ($vnet.Tag.ContainsKey($tagName)) {
-        # Set subnet name format (current matches DIG, DSPM subnet name)
-        $subnetName = "$($tagName)-$($vnet.Location)"
-
-        # If ImportFile switch is used, get CIDR from CSV file
-        if ($ImportFile) {
-            $regionData = $csvData | Where-Object Region -eq $vnet.Location
-
-            # Skip to next VNet if no CIDR found for region
-            if (-not  $regionData) { continue }
-            
-            $newAddress = $regionData.Cidr
-        }
-
-        # If Prompt switch is used, prompt user for new CIDR
-        if ($Prompt) {
-            $newAddress = Get-ValidCIDR -location $vnet.Location
-            if (-not $newAddress) {
-                continue
-            }
-        }
-
-        try {
-            # Backup VNet as JSON file
-            if ($Backup) { Backup-VNet -vnet $vnet }
-
-            # Remove all existing address space
-            foreach ($address in $($vnet.AddressSpace.AddressPrefixes)) {
-                $vnet.AddressSpace.AddressPrefixes.Remove($address) > $null
-            }
-            
-            # Add new address space
-            $vnet.AddressSpace.AddressPrefixes.Add($newAddress)
-
-            # Remove all subnets
-            foreach ($subnet in $($vnet.Subnets)) {
-                $vnet.Subnets.Remove($subnet) > $null
-            }
-
-            # Regional NAT GW
-            $currentNatGW = $allNatGWs | Where-Object Location -eq $vnet.Location
-
-            # Add new subnet
-            Add-AzVirtualNetworkSubnetConfig -Name $subnetName -AddressPrefix $newAddress -VirtualNetwork $vnet -InputObject $currentNatGW > $null
-
-            # Update VNet config
-            Set-AzVirtualNetwork -VirtualNetwork $vnet > $null
-        }
-        catch {
-            Write-Error "Failed to modify VNet $($vnet.Name): $_"
-        }
-        finally {}
+    catch {
+        Write-Error "Failed to modify Storage Account $($storageAccount.StorageAccountName): $_"
     }
 }
