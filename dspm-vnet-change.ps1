@@ -94,14 +94,26 @@ $resourceGroup      = Get-AzResourceGroup | Where-Object { $_.ResourceGroupName 
 $allVnets           = Get-AzVirtualNetwork -ResourceGroupName $resourceGroup.ResourceGroupName
 $allStorageAccounts = Get-AzStorageAccount -ResourceGroupName $resourceGroup.ResourceGroupName
 
+$currentVNet = $allVnets | Where-Object Location -eq $allStorageAccounts[0].Location
 
+$publicIPs = @("54.225.205.121", "18.214.146.232", "3.93.120.3")
+$scanVNets = @($currentVNet.Subnets.Id)
+
+$ipRules = $publicIPs | ForEach-Object { @{IPAddressOrRange = $_; Action = "allow" } }
+$vnetRules = $scanVNets | ForEach-Object { @{VirtualNetworkResourceId = $_; Action = "allow" } }
+
+Set-AzStorageAccount `
+    -ResourceGroupName $resourceGroup.ResourceGroupName `
+    -Name $allStorageAccounts[0].StorageAccountName `
+    -NetworkRuleSet (@{bypass="Logging,Metrics,AzureServices";
+        ipRules=$ipRules;
+        virtualNetworkRules=$vnetRules;
+        defaultAction="deny"}) 
 
 Set-AzStorageAccount -ResourceGroupName "MyResourceGroup" -Name "mystorageaccount" -NetworkRuleSet (@{bypass="Logging,Metrics";
-    ipRules=(@{IPAddressOrRange="20.11.0.0/16";Action="allow"},
-            @{IPAddressOrRange="10.0.0.0/7";Action="allow"});
-    virtualNetworkRules=(@{VirtualNetworkResourceId="/subscriptions/s1/resourceGroups/g1/providers/Microsoft.Network/virtualNetworks/vnet1/subnets/subnet1";Action="allow"},
-                        @{VirtualNetworkResourceId="/subscriptions/s1/resourceGroups/g1/providers/Microsoft.Network/virtualNetworks/vnet2/subnets/subnet2";Action="allow"});
-    defaultAction="allow"})
+    ipRules=$ipRules ;
+    virtualNetworkRules=$vnetRules;
+    defaultAction="deny"})
 
 
 $tagName        = 'dig-security'
