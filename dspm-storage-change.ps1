@@ -9,10 +9,19 @@
 .PARAMETER Ips
     Specify Ip's to add to storage account firewall: "54.225.205.121, 18.214.146.232, 3.93.120.3"
     
+.PARAMETER Regions
+    Comma-separated list of Azure regions: "westus,eastus,centralus"
+    When selected only the specified regions will be modified.
+
 .EXAMPLE
-    Modify firewall to allow specified IP's
+    Modify storage account firewall to allow specified IP's
 
     .\dspm-storage-change.ps1 -Ips "54.225.205.121, 18.214.146.232, 3.93.120.3"
+
+.EXAMPLE
+    Modify storage account firewall only in westus, eastus, and eastus2 regions.
+
+    .\dspm-storage-change.ps1  -Regions "westus,eastus, eastus2" 
 
 .NOTES
     Author: Erick Moore
@@ -23,7 +32,9 @@
 [CmdletBinding()]
 param (
     [Parameter(Mandatory=$false, HelpMessage = "Allowed public IPs to allow. Default: '54.225.205.121, 18.214.146.232, 3.93.120.3'")]
-    [string]$Ips
+    [string]$Ips,
+    [Parameter(Mandatory=$false, HelpMessage="Comma-separated list of Azure regions to apply changes (e.g., 'westus,eastus,centralus')")]
+    [string]$Regions    
 )
 
 $tagName            = 'dig-security'
@@ -37,6 +48,7 @@ $azureAccess        = "Logging, Metrics, AzureServices"
 
 
 if ($Ips) { $publicIPs = $Ips.Split(",").Trim() }
+if ($Regions) { $dspmRegions = $Regions.Split(',').Trim() }
 
 # Set Default values if not provided
 if (-not $Ips) { $publicIPs = $dspmIps }
@@ -51,6 +63,14 @@ foreach  ($storageAccount in $allStorageAccounts) {
 
     $counter++
     $percentComplete = ($counter / $storageCount) * 100
+
+    # If Regions switch is used, skip account if not in specified regions
+    if ($Regions) {
+        if ($storageAccount.Location -notin $dspmRegions) {
+            Start-Sleep -Seconds 1
+            continue
+        }
+    }
 
     # Progress bar
     Write-Progress -Activity "Storage Account: $($storageAccount.StorageAccountName) Region: $($storageAccount.Location)" -Status "Processing Storage Account $counter of $storageCount" -PercentComplete $percentComplete -Id 1
