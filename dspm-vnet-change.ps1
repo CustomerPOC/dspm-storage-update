@@ -78,26 +78,13 @@ param (
     [string]$Regions
 )
 
-# 54.225.205.121
-# 18.214.146.232
-# 3.93.120.3
-
-# Find all storage accounts
-# Find all networks
-# Loop through all storage accounts
-# Match network in same region
-# add network to storage account rules
-# add required ingress ip's to storage account rules
-
 
 $tagName            = 'dig-security'
 $resourceGroup      = Get-AzResourceGroup | Where-Object { $_.ResourceGroupName -match "dig-security-rg-" }
 $allVnets           = Get-AzVirtualNetwork -ResourceGroupName $resourceGroup.ResourceGroupName
 $allStorageAccounts = Get-AzStorageAccount -ResourceGroupName $resourceGroup.ResourceGroupName
 $serviceEndpoints   = @("Microsoft.AzureCosmosDB", "Microsoft.Sql", "Microsoft.Storage")
-
-$publicIPs = @("54.225.205.121", "18.214.146.232", "3.93.120.3")
-#$currentVNet = $allVnets | Where-Object Location -eq $allStorageAccounts[0].Location
+$publicIPs          = @("54.225.205.121", "18.214.146.232", "3.93.120.3")
 
 foreach  ($storageAccount in $allStorageAccounts) {
     $currentVNet = $allVnets | Where-Object Location -eq $storageAccount.Location
@@ -123,139 +110,6 @@ foreach  ($storageAccount in $allStorageAccounts) {
         defaultAction="deny"}) 
 }
 
-
-
-
-
-
-
-
-
-
-
-
-$tagName        = 'dig-security'
-$resourceGroup  = Get-AzResourceGroup | Where-Object { $_.ResourceGroupName -match "dig-security-rg-" }
-$allVnets       = Get-AzVirtualNetwork -ResourceGroupName $resourceGroup.ResourceGroupName
-$allNatGWs      = Get-AzNatGateway -ResourceGroupName $resourceGroup.ResourceGroupName
-$vnetCount      = $allVnets.Count
-$newAddress     = $Cidr
-
-if ($Regions) {
-    $dspmRegions = $Regions.Split(',').Trim()
-    $regionCount = $dspmRegions.Count
-}
-
-# ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-# ║ Test-CIDR Function: RegEx to match format x.x.x.x/xx                                                                                     ║
-# ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-function Test-CIDR {
-    param (
-        [string]$cidr
-    )
-    $regex = '^([0-9]{1,3}\.){3}[0-9]{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$'
-    return $cidr -match $regex
-}
-
-# ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-# ║ Get-ValidCIDR Function: Prompt for valid CIDR 3 times before failing                                                                     ║
-# ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-function Get-ValidCIDR {
-    param (
-        [string]$location,
-        [int]$maxRetries = 3
-    )
-    $retryCount = 0
-    do {
-        $cidr = Read-Host "Enter CIDR for $location"
-        if (Test-CIDR -cidr $cidr) {
-            return $cidr
-        }
-        else {
-            Write-Host "Invalid CIDR format. Please enter a valid CIDR notation (e.g., 10.1.0.0/24)." -BackgroundColor DarkRed -ForegroundColor White
-            $retryCount++
-        }
-    } while ($retryCount -lt $maxRetries)
-
-    Write-Host "Maximum retries reached. Skipping $location"
-    return $null
-}
-
-# ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-# ║ Backup-VNet Function: Export existing VNet as RAW json                                                                                   ║
-# ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-function Backup-VNet {
-    param (
-        [Parameter(Mandatory = $true)]
-        [Microsoft.Azure.Commands.Network.Models.PSVirtualNetwork] $vnet
-    )
-    $timestamp = Get-Date -Format "yyyyMMddHHmmss"
-    $filename = "$($vnet.Name)-raw-$timestamp.json"
-    $vnet | ConvertTo-Json -Depth 10 | Out-File -FilePath $filename
-}
-
-# ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-# ║ ImporFile: Modify/Create DIG | DSPM VNet's in all specified regions from imported csv file                                               ║
-# ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-if ($ImportFile) {
-    $csvData = Import-Csv -Path $ImportFile
-    
-    foreach ($item in $csvData) {
-        $item.Region = $item.Region.Trim()
-        $item.Cidr = $item.Cidr.Trim()
-        $validCidr = Test-CIDR -cidr $item.Cidr
-        if (-not $validCidr) {
-            Write-Error "Invalid CIDR format in CSV file for $($item.Region). Please ensure CIDR is in the format x.x.x.x/xx"
-            exit
-        }
-    }
-
-    $dspmRegions = ($csvData | Select-Object Region).Region
-    $regionCount = $dspmRegions.Count
-}
-
-# ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-# ║ New-Vnet: Create DIG | DSPM VNet's in all specified regions                                                                              ║
-# ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-if ($CreateVNet){
-
-    foreach ($region in $dspmRegions) {
-
-        # If ImportFile switch is used, get CIDR from CSV file
-        if ($ImportFile) {
-            $regionData = $csvData | Where-Object Region -eq $region
-            $newAddress = $regionData.Cidr
-        }
-
-        if ($Prompt) {
-            $newAddress = Get-ValidCIDR -location $region
-            if (-not $newAddress) {
-                continue
-            }
-        }
-
-        $counter++
-        $percentComplete = ($counter / $regionCount ) * 100
-        Write-Progress -Activity "Creating VNet in $region" -Status "$counter of $regionCount" -PercentComplete $percentComplete
-
-        $digName = "$tagName-$region"
-
-        if ($Force) {
-            $newVNet = New-AzVirtualNetwork -Name $digName -ResourceGroupName $resourceGroup.ResourceGroupName -Location $region -AddressPrefix $newAddress -Tag @{ $tagName = 'true' } -Force
-        }
-
-        if (-not $Force) {
-            $newVNet = New-AzVirtualNetwork -Name $digName -ResourceGroupName $resourceGroup.ResourceGroupName -Location $region -AddressPrefix $newAddress -Tag @{ $tagName = 'true' }
-        }
-
-        if ($newVNet) {
-            Add-AzVirtualNetworkSubnetConfig -Name $digName -VirtualNetwork $newVNet -AddressPrefix $newAddress  > $null
-            Set-AzVirtualNetwork -VirtualNetwork $newVNet > $null
-        }
-    }
-    $counter = 0
-    exit
-}
 
 # ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
 # ║ Main Process: Loop through all discovered VNet's, find matching tag, remove all subnets and CIDR's, replace with specified CIDR.         ║
