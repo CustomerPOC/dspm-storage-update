@@ -31,7 +31,7 @@
 
 [CmdletBinding()]
 param (
-    [Parameter(Mandatory=$false, HelpMessage = "Allowed public IPs to allow. Default: '54.225.205.121, 18.214.146.232, 3.93.120.3'")]
+    [Parameter(Mandatory=$false, HelpMessage = "Allowed public IPs to allow. Default: '54.225.205.121, 18.214.146.232, 3.93.120.3, 52.48.123.3, 99.80.210.235, 34.247.249.123'")]
     [string]$Ips,
     [Parameter(Mandatory=$false, HelpMessage="Comma-separated list of Azure regions to apply changes (e.g., 'westus,eastus,centralus')")]
     [string]$Regions    
@@ -43,7 +43,7 @@ $allVnets           = Get-AzVirtualNetwork -ResourceGroupName $resourceGroup.Res
 $allStorageAccounts = Get-AzStorageAccount -ResourceGroupName $resourceGroup.ResourceGroupName
 $storageCount       = $allStorageAccounts.Count
 $serviceEndpoints   = @("Microsoft.AzureCosmosDB", "Microsoft.Sql", "Microsoft.Storage")
-$dspmIps            = @("54.225.205.121", "18.214.146.232", "3.93.120.3")
+$dspmIps            = @("54.225.205.121", "18.214.146.232", "3.93.120.3", "52.48.123.3", "99.80.210.235", "34.247.249.123")
 $azureAccess        = "Logging, Metrics, AzureServices"
 
 
@@ -83,8 +83,7 @@ foreach  ($storageAccount in $allStorageAccounts) {
 
     try {
         # Set service endpoints on default subnet
-        $subnetConfig = Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints -VirtualNetwork $currentVNet -AddressPrefix $currentVNet.Subnets[0].AddressPrefix > $null
-        $subnetConfig | Set-AzVirtualNetwork > $null
+        $currentVNet | Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints  -AddressPrefix $currentVNet.Subnets[0].AddressPrefix | Set-AzVirtualNetwork > $null
     
         # Get scan subnet id
         $dspmSubnet = @($currentVNet.Subnets.Id)
