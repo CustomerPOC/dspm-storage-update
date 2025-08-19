@@ -93,6 +93,7 @@ foreach  ($storageAccount in $allStorageAccounts) {
         $vnetRules  = $dspmSubnet | ForEach-Object { @{VirtualNetworkResourceId = $_; Action = "allow" } }
     
         Set-AzStorageAccount -ResourceGroupName $resourceGroup.ResourceGroupName -Name $storageAccount.StorageAccountName `
+            -PublicNetworkAccess Enabled `
             -NetworkRuleSet (@{bypass=$azureAccess;
                 ipRules=$ipRules;
                 virtualNetworkRules=$vnetRules;
