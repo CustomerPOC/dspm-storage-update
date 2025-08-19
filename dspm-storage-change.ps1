@@ -83,7 +83,7 @@ foreach  ($storageAccount in $allStorageAccounts) {
 
     try {
         # Set service endpoints on default subnet
-        $currentVNet | Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints  -AddressPrefix $currentVNet.Subnets[0].AddressPrefix | Set-AzVirtualNetwork > $null
+        $currentVNet | Set-AzVirtualNetworkSubnetConfig -Name $subnetName -ServiceEndpoint $serviceEndpoints -AddressPrefix $currentVNet.Subnets[0].AddressPrefix -NetworkSecurityGroupId $currentVNet.Subnets[0].NetworkSecurityGroup.Id | Set-AzVirtualNetwork > $null
     
         # Get scan subnet id
         $dspmSubnet = @($currentVNet.Subnets.Id)
